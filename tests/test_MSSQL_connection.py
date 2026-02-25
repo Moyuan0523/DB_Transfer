@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-MSSQL 遠端連接測試腳本（SSH 隧道版本）
-
-使用說明：
-1. 複製 .env.example 到 .env 並填入實際連接資訊
-2. 在另一個終端執行 SSH 隧道：
-   ssh -L 1433:localhost:1433 -L 3306:localhost:3306 yan@140.116.96.67
-3. 保持 SSH 連接開啟，然後執行此腳本
-"""
-
 import sys
 import os
 from pathlib import Path
@@ -52,13 +42,23 @@ SERVER = os.getenv('MSSQL_SERVER', 'localhost,1433')
 DATABASE = os.getenv('MSSQL_DATABASE', 'AdventureWorks2022')
 USERNAME = os.getenv('MSSQL_USERNAME', 'sa')
 PASSWORD = os.getenv('MSSQL_PASSWORD')
-REMOTE_HOST = os.getenv('REMOTE_HOST', '140.116.96.67')
-SSH_USER = os.getenv('SSH_USER', 'yan')
+REMOTE_HOST = os.getenv('REMOTE_HOST')
+SSH_USER = os.getenv('SSH_USER')
 
+# 檢查必要的環境變數
+missing_vars = []
 if not PASSWORD:
-    print("❌ 未設定 MSSQL_PASSWORD 環境變數！")
+    missing_vars.append('MSSQL_PASSWORD')
+if not REMOTE_HOST:
+    missing_vars.append('REMOTE_HOST')
+if not SSH_USER:
+    missing_vars.append('SSH_USER')
+
+if missing_vars:
+    print(f"❌ 缺少必要的環境變數: {', '.join(missing_vars)}")
     print("\n請在 .env 檔案中設定：")
-    print("  MSSQL_PASSWORD=your_password")
+    for var in missing_vars:
+        print(f"  {var}=your_value")
     sys.exit(1)
 # ================================================================
 
