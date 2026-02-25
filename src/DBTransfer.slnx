@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="DBTransfer.Console/DBTransfer.Console.csproj" />
+  <Project Path="DBTransfer.Core/DBTransfer.Core.csproj" />
+  <Project Path="DBTransfer.Infrastructure/DBTransfer.Infrastructure.csproj" />
+</Solution>
