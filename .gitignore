@@ -1,0 +1,162 @@
+# ===========================
+# .NET / C# 项目
+# ===========================
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Visual Studio Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Rider
+.idea/
+*.sln.iml
+
+# NuGet
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# ===========================
+# Python
+# ===========================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# Conda
+.conda/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Python egg
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# ===========================
+# 数据库相关
+# ===========================
+
+# 数据库备份文件
+*.bak
+*.mdf
+*.ldf
+*.db
+*.sqlite
+*.sqlite3
+
+# 连接配置（包含敏感信息）
+**/appsettings.Development.json
+**/appsettings.Local.json
+.env
+.env.local
+secrets.json
+
+# 日志和临时文件
+migration_logs/
+*.log
+*.tmp
+*.temp
+
+# ===========================
+# macOS
+# ===========================
+
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Thumbnails
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# ===========================
+# Windows
+# ===========================
+
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# ===========================
+# 项目特定
+# ===========================
+
+# 测试数据
+test_data/
+sample_data/
+
+# 性能测试结果
+BenchmarkDotNet.Artifacts/
+
+# 文档生成
+docs/api/
+docs/_site/
+
+# 备份
+*.backup
+backup/
+
+# 敏感信息（重要！）
+connection_strings.txt
+passwords.txt
+credentials.json
