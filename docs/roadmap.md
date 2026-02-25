@@ -12,22 +12,21 @@
 ## **階段一：環境準備與 MSSQL 資料庫建立** (1-2 天)
 
 ### 1.1 安裝必要軟體
-- [ ] 安裝 SQL Server 2019/2022 Express Edition (免費版本)
-- [ ] 安裝 SQL Server Management Studio (SSMS)
-- [ ] 安裝 MariaDB Server
-- [ ] 安裝 Visual Studio 2022 Community Edition (含 .NET 8)
-- [ ] 安裝 HeidiSQL 或 DBeaver (MariaDB 管理工具)
+- [x] 安裝 SQL Server 2019/2022 Express Edition (免費版本)
+- [x] 安裝 SQL Server Management Studio (SSMS)
+- [x] 安裝 MariaDB Server
+- [x] 安裝 Visual Studio 2022 Community Edition (含 .NET 8)
+- [x] 安裝 HeidiSQL 或 DBeaver (MariaDB 管理工具)
 
 ### 1.2 建立 MSSQL 測試資料庫
-- [ ] 使用 SSMS 建立新資料庫 (例如: `TestSourceDB`)
-- [ ] 根據報告內容建立範例資料表結構
-- [ ] 插入測試資料 (至少 3-5 個表格，每個表格 10-100 筆資料)
-- [ ] 建立主鍵、外鍵、索引等約束條件
+- [x] 使用 SSMS 建立新資料庫 (使用 `AdventureWorks2022`)
+- [x] 根據報告內容建立範例資料表結構
+- [x] 插入測試資料 (至少 3-5 個表格，每個表格 10-100 筆資料)
+- [x] 建立主鍵、外鍵、索引等約束條件
 
 ### 1.3 建立 MariaDB 目標資料庫  
-- [ ] 建立新資料庫 (例如: `TestTargetDB`)
-- [ ] 確認可以正常連線
-
+- [x] 確認可以正常連線
+（不新增資料庫，未來轉移時新增）
 ---
 
 ## **階段二：C# 專案架構設計** (2-3 天)

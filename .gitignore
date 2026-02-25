@@ -1,5 +1,5 @@
 # ===========================
-# .NET / C# 项目
+# .NET / C# 專案
 # ===========================
 
 # Build results
@@ -81,10 +81,10 @@ eggs/
 *.spec
 
 # ===========================
-# 数据库相关
+# 資料庫相關
 # ===========================
 
-# 数据库备份文件
+# 資料庫備份檔案
 *.bak
 *.mdf
 *.ldf
@@ -92,14 +92,14 @@ eggs/
 *.sqlite
 *.sqlite3
 
-# 连接配置（包含敏感信息）
+# 連接配置（包含敏感資訊）
 **/appsettings.Development.json
 **/appsettings.Local.json
 .env
 .env.local
 secrets.json
 
-# 日志和临时文件
+# 日誌和臨時檔案
 migration_logs/
 *.log
 *.tmp
@@ -138,25 +138,24 @@ ehthumbs_vista.db
 $RECYCLE.BIN/
 
 # ===========================
-# 项目特定
+# 專案特定
 # ===========================
 
-# 测试数据
+# 測試資料
 test_data/
 sample_data/
 
-# 性能测试结果
+# 效能測試結果
 BenchmarkDotNet.Artifacts/
 
-# 文档生成
-docs/api/
-docs/_site/
+# 文檔生成
+docs/
 
-# 备份
+# 備份
 *.backup
 backup/
 
-# 敏感信息（重要！）
+# 敏感資訊（重要！）
 connection_strings.txt
 passwords.txt
 credentials.json
