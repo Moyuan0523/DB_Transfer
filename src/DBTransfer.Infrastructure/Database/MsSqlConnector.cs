@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using DBTransfer.Core.Interfaces;
 using DBTransfer.Core.Models;
@@ -77,7 +78,7 @@ public class MsSqlConnector : IDatabaseConnector
                 return true;
             } // using 結束後自動丟棄物件
         }
-        catch(Exception ex)
+        catch
         {
             return false;
         }
@@ -108,8 +109,35 @@ public class MsSqlConnector : IDatabaseConnector
     /// </summary>
     public List<string> GetTableNames()
     {
-        // TODO: 待實作
-        throw new NotImplementedException();
+       try
+       {
+            if(_connection == null || _connection.State != System.Data.ConnectionState.Open)
+            {
+                Console.WriteLine("資料庫連線未開啟");
+                return new List<string>();
+            }
+            // 查詢所有表名稱（包含 schema）
+            string sql = "SELECT TABLE_SCHEMA + '.' + TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_SCHEMA, TABLE_NAME";
+            using(var command = new SqlCommand(sql, _connection))
+            {
+                using(var reader = command.ExecuteReader())
+                {
+                    var res = new List<string>();
+                    while(reader.Read()){
+                        string value = reader.GetString(0);
+                        // 把 value push 進 res
+                        res.Add(value);
+                    }
+                    return res;
+                }
+            }
+
+       }
+       catch(Exception ex)
+       {
+            Console.WriteLine($"查詢資料表名稱失敗：{ex.Message}");
+            return new List<string>();
+       }
     }
 
     /// <summary>
@@ -131,8 +159,60 @@ public class MsSqlConnector : IDatabaseConnector
     /// <param name="tableName">表名稱</param>
     public List<Dictionary<string, object>> GetTableData(string tableName)
     {
-        // TODO: 待實作
-        throw new NotImplementedException();
+        try
+        {
+            if(string.IsNullOrEmpty(tableName))
+            {
+                Console.WriteLine("資料表名稱不可為空");
+                return new List<Dictionary<string, object>>();
+            }
+            if(_connection == null || _connection.State != System.Data.ConnectionState.Open)
+            {
+                Console.WriteLine("資料庫連線未開啟");
+                return new List<Dictionary<string, object>>();
+            }
+
+            // 白名單驗證
+            List<string> validTables = GetTableNames();
+            if(!validTables.Contains(tableName))
+            {
+                throw new ArgumentException($"表 {tableName} 不存在");
+            }
+            
+            // 表名直接用字串插值，不能用參數化查詢
+            string sql = $"SELECT * FROM {tableName}";
+            
+            using(var command = new SqlCommand(sql, _connection))
+            {
+                using(var reader = command.ExecuteReader())
+                {
+                    var data = new List<Dictionary<string, object>>();
+                    while(reader.Read())
+                    {
+                        var row = new Dictionary<string, object>();
+                        for(int i=0; i<reader.FieldCount; i++)
+                        {
+                            string columnName = reader.GetName(i); //取得欄位名稱
+                            if(reader.IsDBNull(i))
+                            {
+                                row[columnName] = DBNull.Value;
+                            }
+                            else
+                            {
+                                row[columnName] = reader.GetValue(i);
+                            }
+                        }
+                        data.Add(row);
+                    }
+                    return data;
+                }
+            }
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine($"讀取表資料失敗：{ex.Message}");
+            return new List<Dictionary<string, object>>();
+        }
     }
 
     /// <summary>
@@ -142,7 +222,64 @@ public class MsSqlConnector : IDatabaseConnector
     /// <param name="data">要寫入的資料</param>
     public bool InsertData(string tableName, List<Dictionary<string, object>> data)
     {
-        // TODO: 待實作
-        throw new NotImplementedException();
+        try
+        {
+            if(string.IsNullOrEmpty(tableName) || data == null || data.Count == 0)
+            {
+                Console.WriteLine("表名稱或寫入之資料不可為空");
+                return false;
+            }
+            if(_connection == null || _connection.State != System.Data.ConnectionState.Open)
+            {
+                Console.WriteLine("資料庫連線未開啟");
+                return false;
+            }
+
+            int successCount = 0;
+
+            foreach(var row in data)
+            {
+                if(row.Count == 0) continue;
+
+                // 取得欄位名稱
+                List<string> columns = row.Keys.ToList(); 
+                // 結果：["CurrencyCode", "Name", "ModifiedDate"]
+        
+                // 生成欄位部分
+                string columnsPart = string.Join(", ", columns);
+                // 結果："CurrencyCode, Name, ModifiedDate"
+
+                // 生成參數部分（@欄位名稱）
+                List<string> parameters = columns.Select(col => "@"+col).ToList();
+                string parametersPart = string.Join(", ", parameters);
+                // 結果："@CurrencyCode, @Name, @ModifiedDate"
+
+                string sql = $"INSERT INTO {tableName}({columnsPart}) VALUES ({parametersPart})";
+
+                using(var command = new SqlCommand(sql, _connection))
+                {
+                    foreach(var column in row.Keys)
+                    {
+                        object value = row[column];
+                        if(value == DBNull.Value)
+                        {
+                            command.Parameters.AddWithValue("@" + column, DBNull.Value);
+                        }
+                        else{
+                            command.Parameters.AddWithValue("@" + column, row[column]);
+                        }
+                    }
+                    command.ExecuteNonQuery();
+                    successCount++;
+                }
+            }
+            Console.WriteLine($"成功插入 {successCount} 筆資料");
+            return true;
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine($"資料寫入失敗：{ex.Message}");
+            return false;
+        }
     }
 }

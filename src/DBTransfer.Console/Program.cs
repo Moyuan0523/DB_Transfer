@@ -70,7 +70,56 @@ if(connected)
 {
     Console.WriteLine("✅ 連線成功！連線已保持開啟\n");
 
-    // 測試 4: Disconnect() - 關閉連線
+    // 測試 4: GetTableNames() - 查詢所有資料表名稱
+    Console.WriteLine("=== 測試 GetTableNames() ===");
+    Console.WriteLine("正在查詢所有資料表名稱...\n");
+    List<string> tableNames = connector.GetTableNames();
+    
+    if(tableNames.Count > 0)
+    {
+        Console.WriteLine($"✅ 成功查詢到 {tableNames.Count} 個資料表：\n");
+        foreach(string tableName in tableNames)
+        {
+            Console.WriteLine($"  📋 {tableName}");
+        }
+        Console.WriteLine();
+    }
+    else
+    {
+        Console.WriteLine("❌ 沒有查詢到任何資料表\n");
+    }
+
+    // 測試 5: GetTableData() - 讀取資料表內容
+    Console.WriteLine("=== 測試 GetTableData() ===");
+    Console.WriteLine("正在讀取 'Sales.Currency' 資料表的內容...\n");
+    
+    List<Dictionary<string, object>> currencyData = connector.GetTableData("Sales.Currency");
+    
+    if (currencyData.Count > 0)
+    {
+        Console.WriteLine($"✅ 成功讀取到 {currencyData.Count} 筆資料\n");
+        
+        // 顯示前 5 筆資料
+        int displayCount = Math.Min(5, currencyData.Count);
+        Console.WriteLine($"顯示前 {displayCount} 筆資料：\n");
+        
+        for (int i = 0; i < displayCount; i++)
+        {
+            Console.WriteLine($"--- 第 {i + 1} 筆資料 ---");
+            foreach (var column in currencyData[i])
+            {
+                string value = column.Value == DBNull.Value ? "NULL" : column.Value.ToString() ?? "NULL";
+                Console.WriteLine($"  {column.Key}: {value}");
+            }
+            Console.WriteLine();
+        }
+    }
+    else
+    {
+        Console.WriteLine("❌ 沒有讀取到任何資料\n");
+    }
+
+    // 測試 6: Disconnect() - 關閉連線
     Console.WriteLine("=== 測試 Disconnect() ===");
     Console.WriteLine("正在斷開連線...");
     connector.Disconnect();
