@@ -135,12 +135,6 @@ python tests/test_mariadb_connection.py
 ### 當前進度
 
 - [x] 階段一：環境準備與 MSSQL 資料庫建立 ✅
-  - [x] 安裝 ODBC Driver 18
-  - [x] 建立 conda 環境
-  - [x] 建立 SSH 隧道連接
-  - [x] 驗證資料庫連接（AdventureWorks2022）
-  - [x] 配置 `.env` 環境變數
-  - [x] 建立 SSH 隧道管理腳本
 - [ ] 階段二：C# 專案架構設計 🚧
 - [ ] 階段三：C# 核心功能開發
 - [ ] 階段四：Clean Code 實踐
@@ -155,13 +149,6 @@ python tests/test_mariadb_connection.py
 - **資料庫管理**:
   - MSSQL: Azure Data Studio
   - MariaDB: HeidiSQL / DBeaver
-
-## 📖 參考資料
-
-- **環境設定**: [docs/ENV_SETUP.md](docs/ENV_SETUP.md) - 環境變數配置完整指南
-- **學習路線**: [docs/roadmap.md](docs/roadmap.md) - C# 學習路線圖
-- **原始實現**: [scripts/transform_original.py](scripts/transform_original.py) - Python 參考程式
-- **範本檔案**: [.env.example](.env.example) - 環境變數範本
 
 ## 🛠️ 常用命令
 
@@ -209,45 +196,9 @@ lsof -i :1433                     # MSSQL 端口
 lsof -i :3306                     # MariaDB 端口
 ```
 
-## 💡 重要提醒
-
-### 安全性
-- ⚠️ **絕對不要**將 `.env` 文件提交到 Git
-- 🔒 `.gitignore` 已配置自動忽略敏感文件
-- 🔑 使用強密碼並定期更換
-
-### 使用建議
-- ✨ 使用 `tunnel.sh` 腳本管理 SSH 隧道，避免多個 terminal
-- 📝 所有連接配置統一在 `.env` 文件中管理
-- 🔄 修改配置後無需重啟腳本，會自動讀取新值
-- 📊 定期使用 `tunnel.sh status` 檢查連接狀態
-
 ## 📝 注意事項
 
 - SSH 隧道必須保持開啟才能存取遠端資料庫
 - 一條 SSH 命令同時轉發 MSSQL (1433) 和 MariaDB (3306) 端口
 - 透過 `.env` 文件管理所有連接資訊，不再硬編碼密碼
 - 測試腳本會自動檢查環境變數是否正確設置
-
-## 👨‍💻 作者
-
-Yuan Mo - 資料庫課程專案
-
-## 📅 時間線
-
-- **2025-06-17**: 完成原始 Python 實現
-- **2026-02-25**: 開始 C# 重寫專案
-  - ✅ 連接到遠端 AdventureWorks2022 資料庫 (71 tables, 20 views)
-  - ✅ 配置 SSH 隧道遠端連接
-  - ✅ 實現 `.env` 環境變數管理
-  - ✅ 建立 SSH 隧道管理腳本
-  - ✅ 撰寫完整的環境設定文檔
-  - 🚧 準備 C# 開發環境（下一步）
-
----
-
-**下一步**: 
-1. 🏗️ 建立本機 MariaDB 開發環境（Docker）
-2. 🚀 安裝 Visual Studio 並建立 C# 專案架構
-
-**優勢**: 一條 SSH 命令即可同時連接 MSSQL 和 MariaDB，開發更高效！🎉

@@ -3,23 +3,23 @@ using System.Linq;
 using System.Collections.Generic;
 using DBTransfer.Core.Interfaces;
 using DBTransfer.Core.Models;
-using Microsoft.Data.SqlClient;
+using MySqlConnector;
 
 namespace DBTransfer.Infrastructure.Database;
 
 /// <summary>
-/// MSSQL 資料庫連接器
+/// MariaDB 資料庫連接器
 /// </summary>
-public class MsSqlConnector : IDatabaseConnector
+public class MariaDbConnector : IDatabaseConnector
 {
-    private SqlConnection? _connection; //_ 表示私有
+    private MySqlConnection? _connection;
     private string _connectionString;
 
     /// <summary>
     /// 初始化連接字串
     /// </summary>
-    /// <param name="connectionString">連線資訊（server ip, port, user...），從 .env 檔讀取</param> 
-    public MsSqlConnector(string connectionString)
+    /// <param name="connectionString">連線資訊（server ip, port, database, user...），從 .env 檔讀取</param>
+    public MariaDbConnector(string connectionString)
     {
         _connectionString = connectionString;
     }
@@ -33,8 +33,8 @@ public class MsSqlConnector : IDatabaseConnector
     {
         try
         {
-            _connection = new SqlConnection(_connectionString);
-            _connection.Open(); //開啟連線
+            _connection = new MySqlConnection(_connectionString);
+            _connection.Open();
             return true;
         }
         catch(Exception ex)
@@ -52,7 +52,7 @@ public class MsSqlConnector : IDatabaseConnector
         try
         {
             if(IsConnectionOpen())
-            { 
+            {
                 _connection.Close();
                 Console.WriteLine("資料庫連線已關閉");
             }
@@ -72,17 +72,16 @@ public class MsSqlConnector : IDatabaseConnector
     {
         try
         {
-            using(var testConnection = new SqlConnection(_connectionString))
+            using(var testConnection = new MySqlConnection(_connectionString))
             {
-                testConnection.Open(); //建立連線
+                testConnection.Open();
                 return true;
-            } // using 結束後自動丟棄物件
+            }
         }
         catch
         {
             return false;
         }
-
     }
 
     /// <summary>
@@ -94,10 +93,11 @@ public class MsSqlConnector : IDatabaseConnector
         {
             return "連線配置尚未設定";
         }
-        var builder = new SqlConnectionStringBuilder(_connectionString);
+        
+        var builder = new MySqlConnectionStringBuilder(_connectionString);
         if(!string.IsNullOrEmpty(builder.Password))
         {
-            builder.Password = "****"; // 隱藏密碼
+            builder.Password = "****";
         }
         return builder.ConnectionString;
     }
@@ -109,38 +109,41 @@ public class MsSqlConnector : IDatabaseConnector
     /// </summary>
     public List<string> GetTableNames()
     {
-       try
-       {
+        try
+        {
             if(!IsConnectionOpen())
             {
                 Console.WriteLine("資料庫連線未開啟");
                 return new List<string>();
             }
-            // 查詢所有表名稱（包含 schema）
-            string sql = @"SELECT TABLE_SCHEMA + '.' + TABLE_NAME 
+
+            // MySQL 的 INFORMATION_SCHEMA 查詢
+            // 注意：MySQL 中 TABLE_SCHEMA 就是資料庫名稱
+            string sql = @"SELECT TABLE_NAME 
                            FROM INFORMATION_SCHEMA.TABLES 
-                           WHERE TABLE_TYPE = 'BASE TABLE' 
-                           ORDER BY TABLE_SCHEMA, TABLE_NAME";
-            using(var command = new SqlCommand(sql, _connection))
+                           WHERE TABLE_SCHEMA = DATABASE() 
+                           AND TABLE_TYPE = 'BASE TABLE'
+                           ORDER BY TABLE_NAME";
+
+            using(var command = new MySqlCommand(sql, _connection))
             {
                 using(var reader = command.ExecuteReader())
                 {
                     var res = new List<string>();
-                    while(reader.Read()){
+                    while(reader.Read())
+                    {
                         string value = reader.GetString(0);
-                        // 把 value push 進 res
                         res.Add(value);
                     }
                     return res;
                 }
             }
-
-       }
-       catch(Exception ex)
-       {
+        }
+        catch(Exception ex)
+        {
             Console.WriteLine($"查詢資料表名稱失敗：{ex.Message}");
             return new List<string>();
-       }
+        }
     }
 
     /// <summary>
@@ -157,62 +160,69 @@ public class MsSqlConnector : IDatabaseConnector
                 Console.WriteLine("資料表名稱不可為空");
                 return null;
             }
+
             if(!IsConnectionOpen())
             {
                 Console.WriteLine("連線尚未建立");
                 return null;
             }
 
-            //白名單驗證
+            // 白名單驗證
             if(!WhiteListValidation(tableName))
             {
                 Console.WriteLine($"表 {tableName} 不存在");
                 return null;
             }
 
-            // tableName 可能包含 or 不包含 shema
-            var parts = tableName.Split('.', 2, StringSplitOptions.RemoveEmptyEntries);
-            string schema = parts.Length == 2 ? parts[0] : "dbo";
-            string spiltTableName = parts.Length == 1 ? parts[0] : parts[1];
+            // MySQL 中不需要處理 schema，直接使用表名
+            // 取得資料庫名稱作為 schema
+            string schema = _connection.Database;
 
-            string sql1 = $@"SELECT COLUMN_NAME 
-                           FROM INFORMATION_SCHEMA.COLUMNS
-                           WHERE TABLE_SCHEMA = '{schema}' AND TABLE_NAME = '{spiltTableName}'
-                           ORDER BY ORDINAL_POSITION";
-            var colNames = new List<string>();            
-            using(var command1 = new SqlCommand(sql1, _connection))
+            // 查詢欄位名稱
+            string sql1 = @"SELECT COLUMN_NAME 
+                            FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_SCHEMA = DATABASE() 
+                            AND TABLE_NAME = @tableName
+                            ORDER BY ORDINAL_POSITION";
+
+            var colNames = new List<string>();
+
+            using(var command1 = new MySqlCommand(sql1, _connection))
             {
+                command1.Parameters.AddWithValue("@tableName", tableName);
+                
                 using(var reader = command1.ExecuteReader())
                 {
-                    while(reader.Read()){
+                    while(reader.Read())
+                    {
                         string value = reader.GetString(0);
-                        // 把 value push 進 colNames
                         colNames.Add(value);
                     }
                 }
             }
 
-            string sql2 = $@"SELECT COUNT(*)
-                             FROM {tableName}";
+            // 統計行數
+            string sql2 = $"SELECT COUNT(*) FROM `{tableName}`";
+
             int rowCount;
-            using(var command2 = new SqlCommand(sql2, _connection))
+
+            using(var command2 = new MySqlCommand(sql2, _connection))
             {
                 object res = command2.ExecuteScalar();
                 rowCount = Convert.ToInt32(res);
             }
 
-            return  new TableInfo(
-                spiltTableName,
+            return new TableInfo(
+                tableName,
                 schema,
                 colNames,
                 rowCount
             );
-
         }
         catch(Exception ex)
         {
             Console.WriteLine($"讀取表資料失敗：{ex.Message}");
-            return null;            
+            return null;
         }
     }
 
@@ -231,6 +241,7 @@ public class MsSqlConnector : IDatabaseConnector
                 Console.WriteLine("資料表名稱不可為空");
                 return new List<Dictionary<string, object>>();
             }
+
             if(!IsConnectionOpen())
             {
                 Console.WriteLine("資料庫連線未開啟");
@@ -238,25 +249,29 @@ public class MsSqlConnector : IDatabaseConnector
             }
 
             // 白名單驗證
-            if(!WhiteListValidation(tableName)){
+            if(!WhiteListValidation(tableName))
+            {
                 Console.WriteLine($"表 {tableName} 不存在");
-                return new List<Dictionary<string, object>>();                
+                return new List<Dictionary<string, object>>();
             }
-            
-            // 表名直接用字串插值，不能用參數化查詢
-            string sql = $"SELECT * FROM {tableName}";
-            
-            using(var command = new SqlCommand(sql, _connection))
+
+            // MySQL 使用反引號包裹表名
+            string sql = $"SELECT * FROM `{tableName}`";
+
+            using(var command = new MySqlCommand(sql, _connection))
             {
                 using(var reader = command.ExecuteReader())
                 {
                     var data = new List<Dictionary<string, object>>();
+                    
                     while(reader.Read())
                     {
                         var row = new Dictionary<string, object>();
-                        for(int i=0; i<reader.FieldCount; i++)
+                        
+                        for(int i = 0; i < reader.FieldCount; i++)
                         {
-                            string columnName = reader.GetName(i); //取得欄位名稱
+                            string columnName = reader.GetName(i);
+                            
                             if(reader.IsDBNull(i))
                             {
                                 row[columnName] = DBNull.Value;
@@ -266,8 +281,10 @@ public class MsSqlConnector : IDatabaseConnector
                                 row[columnName] = reader.GetValue(i);
                             }
                         }
+                        
                         data.Add(row);
                     }
+                    
                     return data;
                 }
             }
@@ -293,14 +310,17 @@ public class MsSqlConnector : IDatabaseConnector
                 Console.WriteLine("表名稱或寫入之資料不可為空");
                 return false;
             }
+
             if(!IsConnectionOpen())
             {
                 Console.WriteLine("資料庫連線未開啟");
                 return false;
             }
-            if(!WhiteListValidation(tableName)){
+
+            if(!WhiteListValidation(tableName))
+            {
                 Console.WriteLine($"表 {tableName} 不存在");
-                return false;                
+                return false;
             }
 
             int successCount = 0;
@@ -310,37 +330,39 @@ public class MsSqlConnector : IDatabaseConnector
                 if(row.Count == 0) continue;
 
                 // 取得欄位名稱
-                List<string> columns = row.Keys.ToList(); 
-                // 結果：["CurrencyCode", "Name", "ModifiedDate"]
-        
-                // 生成欄位部分
-                string columnsPart = string.Join(", ", columns);
-                // 結果："CurrencyCode, Name, ModifiedDate"
+                List<string> columns = row.Keys.ToList();
 
-                // 生成參數部分（@欄位名稱）
-                List<string> parameters = columns.Select(col => "@"+col).ToList();
+                // 生成欄位部分（使用反引號）
+                string columnsPart = string.Join(", ", columns.Select(c => $"`{c}`"));
+
+                // 生成參數部分
+                List<string> parameters = columns.Select(col => "@" + col).ToList();
                 string parametersPart = string.Join(", ", parameters);
-                // 結果："@CurrencyCode, @Name, @ModifiedDate"
 
-                string sql = $"INSERT INTO {tableName}({columnsPart}) VALUES ({parametersPart})";
+                // MySQL 使用反引號包裹表名和欄位名
+                string sql = $"INSERT INTO `{tableName}` ({columnsPart}) VALUES ({parametersPart})";
 
-                using(var command = new SqlCommand(sql, _connection))
+                using(var command = new MySqlCommand(sql, _connection))
                 {
-                    foreach(var column in row.Keys)
+                    foreach(var column in columns)
                     {
                         object value = row[column];
+                        
                         if(value == DBNull.Value)
                         {
                             command.Parameters.AddWithValue("@" + column, DBNull.Value);
                         }
-                        else{
-                            command.Parameters.AddWithValue("@" + column, row[column]);
+                        else
+                        {
+                            command.Parameters.AddWithValue("@" + column, value);
                         }
                     }
+                    
                     command.ExecuteNonQuery();
                     successCount++;
                 }
             }
+
             Console.WriteLine($"成功插入 {successCount} 筆資料");
             return true;
         }
@@ -351,18 +373,22 @@ public class MsSqlConnector : IDatabaseConnector
         }
     }
 
+    // ========== 私有輔助方法 ==========
+
     /// <summary>
     /// 檢查連線
     /// </summary>
-    private bool IsConnectionOpen(){
+    private bool IsConnectionOpen()
+    {
         return _connection != null && _connection.State == System.Data.ConnectionState.Open;
     }
 
     /// <summary>
     /// 白名單驗證
     /// </summary>
-    private bool WhiteListValidation(string tableName){
-        List<string> VaildNames = GetTableNames();
-        return VaildNames.Contains(tableName);
+    private bool WhiteListValidation(string tableName)
+    {
+        List<string> validNames = GetTableNames();
+        return validNames.Contains(tableName);
     }
 }

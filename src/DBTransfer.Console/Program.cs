@@ -119,7 +119,31 @@ if(connected)
         Console.WriteLine("❌ 沒有讀取到任何資料\n");
     }
 
-    // 測試 6: Disconnect() - 關閉連線
+    // 測試 6: GetTableStructure() - 取得資料表結構資訊
+    Console.WriteLine("=== 測試 GetTableStructure() ===");
+    Console.WriteLine("正在查詢 'Sales.Currency' 資料表的結構...\n");
+    
+    var tableInfo = connector.GetTableStructure("Sales.Currency");
+    
+    if (tableInfo != null)
+    {
+        Console.WriteLine("✅ 成功取得資料表結構資訊\n");
+        Console.WriteLine($"  📌 Schema: {tableInfo.Schema}");
+        Console.WriteLine($"  📌 Table Name: {tableInfo.TableName}");
+        Console.WriteLine($"  📌 Row Count: {tableInfo.TableRowNum}");
+        Console.WriteLine($"  📌 Columns ({tableInfo.ColumnNames.Count}):");
+        foreach (var columnName in tableInfo.ColumnNames)
+        {
+            Console.WriteLine($"     - {columnName}");
+        }
+        Console.WriteLine();
+    }
+    else
+    {
+        Console.WriteLine("❌ 無法取得資料表結構資訊\n");
+    }
+
+    // 測試 7: Disconnect() - 關閉連線
     Console.WriteLine("=== 測試 Disconnect() ===");
     Console.WriteLine("正在斷開連線...");
     connector.Disconnect();
@@ -127,6 +151,74 @@ if(connected)
 else
 {
     Console.WriteLine("❌ 連線失敗！\n");
+}
+
+Console.WriteLine("\n" + new string('=', 60));
+Console.WriteLine("=== Testing MariaDB Connection ===");
+Console.WriteLine(new string('=', 60) + "\n");
+
+// 從環境變數讀取 MariaDB 連接資訊
+string mariaHost = Env.GetString("MARIADB_HOST", "localhost");
+string mariaPort = Env.GetString("MARIADB_PORT", "3306");
+string mariaUser = Env.GetString("MARIADB_USER", "root");
+string mariaPassword = Env.GetString("MARIADB_PASSWORD", "");
+
+Console.WriteLine($"Host: {mariaHost}");
+Console.WriteLine($"Port: {mariaPort}");
+Console.WriteLine($"User: {mariaUser}");
+Console.WriteLine($"Password: {(string.IsNullOrEmpty(mariaPassword) ? "❌ 未設定" : "✅ ****")}\n");
+
+// 組合 MariaDB 連接字串（不指定資料庫）
+string mariaConnectionString = 
+    $"Server={mariaHost};" +
+    $"Port={mariaPort};" +
+    $"User={mariaUser};" +
+    $"Password={mariaPassword};";
+
+var mariaConnector = new MariaDbConnector(mariaConnectionString);
+
+// 測試 1: GetConnectionString()
+Console.WriteLine("=== 測試 GetConnectionString() ===");
+string mariaMaskedConnectionString = mariaConnector.GetConnectionString();
+Console.WriteLine($"連接字串（隱藏密碼）: {mariaMaskedConnectionString}\n");
+
+// 測試 2: TestConnection()
+Console.WriteLine("=== 測試 TestConnection() ===");
+Console.WriteLine("正在測試連線（不保持連線）...");
+bool mariaTestResult = mariaConnector.TestConnection();
+if(mariaTestResult)
+{
+    Console.WriteLine("✅ MariaDB 測試連線成功！\n");
+}
+else
+{
+    Console.WriteLine("❌ MariaDB 測試連線失敗！\n");
+}
+
+// 測試 3: Connect()
+Console.WriteLine("=== 測試 Connect() ===");
+Console.WriteLine("正在建立持續連線...");
+bool mariaConnected = mariaConnector.Connect();
+
+if(mariaConnected)
+{
+    Console.WriteLine("✅ MariaDB 連線成功！連線已保持開啟\n");
+    
+    Console.WriteLine("💡 提示：目前連接到 MariaDB 伺服器（未指定資料庫）");
+    Console.WriteLine("💡 後續將透過程式碼創建目標資料庫並遷移資料\n");
+    
+    // 測試 4: Disconnect()
+    Console.WriteLine("=== 測試 Disconnect() ===");
+    Console.WriteLine("正在斷開連線...");
+    mariaConnector.Disconnect();
+}
+else
+{
+    Console.WriteLine("❌ MariaDB 連線失敗！\n");
+    Console.WriteLine("請檢查：");
+    Console.WriteLine("  1. MariaDB 服務是否啟動");
+    Console.WriteLine("  2. SSH Tunnel 是否建立 (Port 3306)");
+    Console.WriteLine("  3. .env 檔案中的帳號密碼是否正確\n");
 }
 
 Console.WriteLine("\n=== 所有測試完成 ===");
