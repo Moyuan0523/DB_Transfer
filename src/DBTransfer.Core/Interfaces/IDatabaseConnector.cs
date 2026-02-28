@@ -50,4 +50,34 @@ public interface IDatabaseConnector
     /// 寫入數據
     /// </summary>
     bool InsertData(string TableName, List<Dictionary<string, object>> data); // 寫入成功 true, 寫入失敗 false
+
+    // ========== 第三組：資料庫管理方法 ==========
+    
+    /// <summary>
+    /// 檢查資料庫是否存在
+    /// </summary>
+    /// <param name="databaseName">資料庫名稱</param>
+    /// <returns>存在返回 true，不存在返回 false</returns>
+    bool DatabaseExists(string databaseName);
+
+    /// <summary>
+    /// 創建資料庫
+    /// </summary>
+    /// <param name="databaseName">資料庫名稱</param>
+    /// <returns>創建成功返回 true，失敗返回 false</returns>
+    bool CreateDatabase(string databaseName);
+
+    /// <summary>
+    /// 切換到指定資料庫
+    /// </summary>
+    /// <param name="databaseName">資料庫名稱</param>
+    /// <returns>切換成功返回 true，失敗返回 false</returns>
+    bool UseDatabase(string databaseName);
+
+    /// <summary>
+    /// 刪除指定資料庫
+    /// </summary>
+    /// <param name="databaseName">資料庫名稱</param>
+    /// <returns>切換成功返回 true，失敗返回 false</returns>
+    bool DeleteDatabase(string databaseName);
 }

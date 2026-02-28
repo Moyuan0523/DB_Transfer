@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using DBTransfer.Core.Interfaces;
 using DBTransfer.Core.Models;
 using MySqlConnector;
+using DBTransfer.Core.Utils;
+using Microsoft.Data.SqlClient;
 
 namespace DBTransfer.Infrastructure.Database;
 
@@ -51,7 +53,7 @@ public class MariaDbConnector : IDatabaseConnector
     {
         try
         {
-            if(IsConnectionOpen())
+            if(IsConnectionOpen() && _connection != null)
             {
                 _connection.Close();
                 Console.WriteLine("資料庫連線已關閉");
@@ -95,6 +97,10 @@ public class MariaDbConnector : IDatabaseConnector
         }
         
         var builder = new MySqlConnectionStringBuilder(_connectionString);
+        if(_connection != null && IsConnectionOpen())
+        {
+            builder.Database = _connection.Database;
+        }
         if(!string.IsNullOrEmpty(builder.Password))
         {
             builder.Password = "****";
@@ -161,7 +167,7 @@ public class MariaDbConnector : IDatabaseConnector
                 return null;
             }
 
-            if(!IsConnectionOpen())
+            if(!IsConnectionOpen() || _connection == null)
             {
                 Console.WriteLine("連線尚未建立");
                 return null;
@@ -208,8 +214,15 @@ public class MariaDbConnector : IDatabaseConnector
 
             using(var command2 = new MySqlCommand(sql2, _connection))
             {
-                object res = command2.ExecuteScalar();
-                rowCount = Convert.ToInt32(res);
+                object? res = command2.ExecuteScalar();
+                if(res == null)
+                {
+                    rowCount = 0;
+                }
+                else
+                {
+                    rowCount = Convert.ToInt32(res);
+                }       
             }
 
             return new TableInfo(
@@ -390,5 +403,189 @@ public class MariaDbConnector : IDatabaseConnector
     {
         List<string> validNames = GetTableNames();
         return validNames.Contains(tableName);
+    }
+
+    // ========== 第三組：資料庫管理方法 ==========
+    // TODO: 實作以下三個方法
+    public bool DatabaseExists(string databaseName)
+    {
+        try
+        {
+            if(!IsConnectionOpen())
+            {
+                Console.WriteLine("資料庫連線未開啟");
+                return false;
+            }
+            if(string.IsNullOrEmpty(databaseName))
+            {
+                Console.WriteLine("資料庫名稱不可為空");
+                return false;
+            }
+            string sql = @"SELECT COUNT(*)
+                        FROM INFORMATION_SCHEMA.SCHEMATA
+                        WHERE SCHEMA_NAME = @dbName";
+            using(var command = new MySqlCommand(sql, _connection))
+            {
+                command.Parameters.AddWithValue("@dbName", databaseName);
+                object? res = command.ExecuteScalar();
+                int count;
+                if(res == null)
+                {
+                    count = 0;
+                } 
+                else
+                {
+                    count = Convert.ToInt32(res);
+                }
+                return count > 0;
+            }
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine($"資料庫存在查詢失敗：{ex.Message}");
+            return false;
+        }
+    }
+    public bool CreateDatabase(string databaseName) 
+    {
+        try
+        {
+            if(!IsConnectionOpen())
+            {
+                Console.WriteLine("資料庫連線未開啟");
+                return false;
+            }
+            if(string.IsNullOrEmpty(databaseName))
+            {
+                Console.WriteLine("資料庫名稱不可為空");
+                return false;
+            }
+            if(DatabaseExists(databaseName))
+            {
+                Console.WriteLine($"資料庫 '{databaseName}' 已存在");
+                return true;
+            }
+            
+            if(!TableNameConverter.IsValidMariaDBTableName(databaseName))
+            {
+                Console.WriteLine($"資料庫 '{databaseName}' 名稱不合法，只允許英文字母、數字、底線");
+                return false;
+            }
+            
+            string sql = $@"CREATE DATABASE `{databaseName}`
+                           CHARACTER SET utf8mb4
+                           COLLATE utf8mb4_unicode_ci";
+            using(var command = new MySqlCommand(sql, _connection))
+            {
+                command.ExecuteNonQuery();
+                if(DatabaseExists(databaseName))
+                {
+                    Console.WriteLine($"資料庫 '{databaseName}' 建立成功");
+                    return true;
+                }
+                else
+                {
+                    Console.WriteLine($"資料庫 '{databaseName}' 建立失敗");
+                    return false;
+                }
+            }
+            
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine($"資料庫建立失敗：{ex.Message}");
+            return false;
+        }
+    }
+
+    public bool DeleteDatabase(string databaseName)
+    {
+        try
+        {
+            if(!IsConnectionOpen() || _connection == null)
+            {
+                Console.WriteLine("資料庫連線未開啟");
+                return false;
+            }
+            if(string.IsNullOrEmpty(databaseName))
+            {
+                Console.WriteLine("資料庫名稱不可為空");
+                return false;
+            }
+            if(!DatabaseExists(databaseName))
+            {
+                Console.WriteLine($"資料庫 '{databaseName}' 不存在");
+                return false;
+            }
+            if(!TableNameConverter.IsValidMariaDBTableName(databaseName))
+            {
+                Console.WriteLine($"資料庫 '{databaseName}' 名稱不合法，只允許英文字母、數字、底線");
+                return false;
+            }
+
+            string sql = $"DROP DATABASE `{databaseName}`";
+            using(var command = new MySqlCommand(sql, _connection))
+            {
+                command.ExecuteNonQuery();
+                if(!DatabaseExists(databaseName))
+                {
+                    Console.WriteLine($"資料庫 '{databaseName}' 刪除成功");
+                    return true;
+                }
+                else
+                {
+                    Console.WriteLine($"資料庫 '{databaseName}' 刪除失敗");
+                    return false;
+                }
+            }
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine($"刪除資料庫失敗：{ex.Message}");
+            return false;
+        }
+    }
+
+    public bool UseDatabase(string databaseName)
+    {
+        try
+        {
+            if(!IsConnectionOpen() || _connection == null)
+            {
+                Console.WriteLine("資料庫連線未開啟");
+                return false;
+            }
+            if(string.IsNullOrEmpty(databaseName))
+            {
+                Console.WriteLine("資料庫名稱不可為空");
+                return false;
+            }
+            if(!DatabaseExists(databaseName))
+            {
+                Console.WriteLine($"資料庫 '{databaseName}' 不存在");
+                return false;
+            }
+
+            // 查詢目前連接之資料庫
+            if(_connection != null && !_connection.Database.Equals(databaseName))
+            {
+                Console.WriteLine($"目前連線資料庫為 '{_connection.Database}'，開始切換...");
+            }
+            else
+            {
+                Console.WriteLine($"'{databaseName}' 便為目前連接之資料庫");
+                return true;
+            }
+
+            // 切換資料庫
+            _connection.ChangeDatabase(databaseName);
+            Console.WriteLine($"切換成功，目前資料庫為 '{_connection.Database}'");
+            return true;
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine($"資料庫切換失敗：{ex.Message}");
+            return false;
+        }
     }
 }

@@ -51,7 +51,7 @@ public class MsSqlConnector : IDatabaseConnector
     {
         try
         {
-            if(IsConnectionOpen())
+            if(IsConnectionOpen() && _connection != null)
             { 
                 _connection.Close();
                 Console.WriteLine("資料庫連線已關閉");
@@ -95,6 +95,10 @@ public class MsSqlConnector : IDatabaseConnector
             return "連線配置尚未設定";
         }
         var builder = new SqlConnectionStringBuilder(_connectionString);
+        if(IsConnectionOpen() && _connection != null)
+        {
+            builder.InitialCatalog = _connection.Database;
+        }
         if(!string.IsNullOrEmpty(builder.Password))
         {
             builder.Password = "****"; // 隱藏密碼
@@ -364,5 +368,97 @@ public class MsSqlConnector : IDatabaseConnector
     private bool WhiteListValidation(string tableName){
         List<string> VaildNames = GetTableNames();
         return VaildNames.Contains(tableName);
+    }
+
+    // ========== 第三組：資料庫管理方法 ==========
+    // TODO: 實作以下三個方法
+    public bool DatabaseExists(string databaseName)
+    {
+        try
+        {
+            if(!IsConnectionOpen())
+            {
+                Console.WriteLine("連線未開啟");
+                return false;
+            } 
+            if(string.IsNullOrEmpty(databaseName))
+            {
+                Console.WriteLine("資料庫名稱不可為空");
+                return false;
+            }
+            string sql = @"SELECT COUNT(*)
+                            FROM master.sys.databases
+                            WHERE name = @dbName";
+            using(var command = new SqlCommand(sql, _connection))
+            {
+                // 添加參數，參數化查詢
+                command.Parameters.AddWithValue("@dbName", databaseName);
+                object res = command.ExecuteScalar(); // 若無，回傳 0
+                int count = Convert.ToInt32(res);
+                return count > 0;
+            }
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine($"資料庫存在查詢失敗：{ex.Message}");
+            return false;
+        }
+
+    }
+    public bool CreateDatabase(string databaseName) 
+    {
+        Console.WriteLine("不支援 MSSQL 建立資料庫");
+        Console.WriteLine("此連接器用於讀取現有 MSSQL 資料庫");
+        return false;
+    }
+
+    public bool DeleteDatabase(string databaseName)
+    {
+        Console.WriteLine("不支援 MSSQL 刪除資料庫");
+        Console.WriteLine("此連接器用於讀取現有 MSSQL 資料庫");
+        return false;
+    }
+
+    public bool UseDatabase(string databaseName)
+    {
+        try
+        {
+            if(!IsConnectionOpen())
+            {
+                Console.WriteLine("資料庫連線未開啟");
+                return false;
+            }
+            if(string.IsNullOrEmpty(databaseName))
+            {
+                Console.WriteLine("資料庫名稱不可為空");
+                return false;
+            }
+            if(!DatabaseExists(databaseName))
+            {
+                Console.WriteLine($"資料庫 '{databaseName}' 不存在");
+            }
+
+            // 查詢目前連接之資料庫
+            if(_connection != null && !databaseName.Equals(_connection.Database))
+            {
+                Console.WriteLine($"目前連線資料庫為 '{_connection.Database}'，開始切換...");
+            }
+            else
+            {
+                Console.WriteLine($"'{databaseName}' 便為目前連接之資料庫");
+                return true;
+            }
+
+            // 切換資料庫
+            _connection.ChangeDatabase(databaseName);
+            Console.WriteLine($"切換成功，目前資料庫為 '{_connection.Database}'");
+      
+            return true;
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine($"資料庫切換錯誤：{ex.Message}");
+            return false;
+        }
     }
 }
