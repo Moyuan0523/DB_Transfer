@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using DBTransfer.Core.Interfaces;
+using DBTransfer.Core.Logging;
 using DBTransfer.Core.Models;
 using Microsoft.Data.SqlClient;
 
@@ -14,14 +15,17 @@ public class MsSqlConnector : IDatabaseConnector
 {
     private SqlConnection? _connection; //_ 表示私有
     private string _connectionString;
+    private readonly ITransferLogger _logger;
 
     /// <summary>
     /// 初始化連接字串
     /// </summary>
-    /// <param name="connectionString">連線資訊（server ip, port, user...），從 .env 檔讀取</param> 
-    public MsSqlConnector(string connectionString)
+    /// <param name="connectionString">連線資訊（server ip, port, user...），從 .env 檔讀取</param>
+    /// <param name="logger">日誌記錄器</param>
+    public MsSqlConnector(string connectionString, ITransferLogger logger)
     {
         _connectionString = connectionString;
+        _logger = logger;
     }
 
     // ========== 第一組：連線管理方法 ==========
@@ -39,7 +43,7 @@ public class MsSqlConnector : IDatabaseConnector
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"連線錯誤：{ex.Message}");
+            _logger.Error($"連線錯誤：{ex.Message}");
             return false;
         }
     }
@@ -54,13 +58,13 @@ public class MsSqlConnector : IDatabaseConnector
             if(IsConnectionOpen() && _connection != null)
             { 
                 _connection.Close();
-                Console.WriteLine("資料庫連線已關閉");
+                _logger.Info("資料庫連線已關閉");
             }
             return true;
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"斷開連線錯誤：{ex.Message}");
+            _logger.Error($"斷開連線錯誤：{ex.Message}");
             return false;
         }
     }
@@ -117,7 +121,7 @@ public class MsSqlConnector : IDatabaseConnector
        {
             if(!IsConnectionOpen())
             {
-                Console.WriteLine("資料庫連線未開啟");
+                _logger.Warn("資料庫連線未開啟");
                 return new List<string>();
             }
             // 查詢所有表名稱（包含 schema）
@@ -142,7 +146,7 @@ public class MsSqlConnector : IDatabaseConnector
        }
        catch(Exception ex)
        {
-            Console.WriteLine($"查詢資料表名稱失敗：{ex.Message}");
+            _logger.Error($"查詢資料表名稱失敗：{ex.Message}");
             return new List<string>();
        }
     }
@@ -158,19 +162,19 @@ public class MsSqlConnector : IDatabaseConnector
         {
             if(string.IsNullOrEmpty(tableName))
             {
-                Console.WriteLine("資料表名稱不可為空");
+                _logger.Warn("資料表名稱不可為空");
                 return null;
             }
             if(!IsConnectionOpen())
             {
-                Console.WriteLine("連線尚未建立");
+                _logger.Warn("連線尚未建立");
                 return null;
             }
 
             //白名單驗證
             if(!WhiteListValidation(tableName))
             {
-                Console.WriteLine($"表 {tableName} 不存在");
+                _logger.Warn($"表 {tableName} 不存在");
                 return null;
             }
 
@@ -215,8 +219,87 @@ public class MsSqlConnector : IDatabaseConnector
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"讀取表資料失敗：{ex.Message}");
+            _logger.Error($"讀取表資料失敗：{ex.Message}");
             return null;            
+        }
+    }
+
+    /// <summary>
+    /// 獲取指定表的欄位詳細資訊（含資料類型）
+    /// </summary>
+    public List<ColumnInfo> GetColumnDetails(string tableName)
+    {
+        try
+        {
+            if(string.IsNullOrEmpty(tableName))
+            {
+                _logger.Warn("資料表名稱不可為空");
+                return new List<ColumnInfo>();
+            }
+            if(!IsConnectionOpen())
+            {
+                _logger.Warn("連線尚未建立");
+                return new List<ColumnInfo>();
+            }
+            if(!WhiteListValidation(tableName))
+            {
+                _logger.Warn($"表 {tableName} 不存在");
+                return new List<ColumnInfo>();
+            }
+
+            var parts = tableName.Split('.', 2, StringSplitOptions.RemoveEmptyEntries);
+            string schema = parts.Length == 2 ? parts[0] : "dbo";
+            string splitTableName = parts.Length == 1 ? parts[0] : parts[1];
+
+            string sql = @"
+                SELECT 
+                    c.COLUMN_NAME,
+                    c.DATA_TYPE,
+                    c.CHARACTER_MAXIMUM_LENGTH,
+                    c.NUMERIC_PRECISION,
+                    c.NUMERIC_SCALE,
+                    c.IS_NULLABLE,
+                    c.ORDINAL_POSITION,
+                    COLUMNPROPERTY(
+                        OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME), 
+                        c.COLUMN_NAME, 
+                        'IsIdentity'
+                    ) AS IS_IDENTITY
+                FROM INFORMATION_SCHEMA.COLUMNS c
+                WHERE c.TABLE_SCHEMA = @schema AND c.TABLE_NAME = @tableName
+                ORDER BY c.ORDINAL_POSITION";
+
+            var columns = new List<ColumnInfo>();
+            using(var command = new SqlCommand(sql, _connection))
+            {
+                command.Parameters.AddWithValue("@schema", schema);
+                command.Parameters.AddWithValue("@tableName", splitTableName);
+
+                using(var reader = command.ExecuteReader())
+                {
+                    while(reader.Read())
+                    {
+                        var col = new ColumnInfo(
+                            columnName: reader.GetString(0),
+                            dataType: reader.GetString(1),
+                            maxLength: reader.IsDBNull(2) ? null : Convert.ToInt32(reader.GetValue(2)),
+                            precision: reader.IsDBNull(3) ? null : Convert.ToInt32(reader.GetValue(3)),
+                            scale: reader.IsDBNull(4) ? null : Convert.ToInt32(reader.GetValue(4)),
+                            isNullable: reader.GetString(5) == "YES",
+                            isIdentity: !reader.IsDBNull(7) && Convert.ToInt32(reader.GetValue(7)) == 1,
+                            ordinalPosition: reader.GetInt32(6)
+                        );
+                        columns.Add(col);
+                    }
+                }
+            }
+
+            return columns;
+        }
+        catch(Exception ex)
+        {
+            _logger.Error($"讀取欄位詳細資訊失敗：{ex.Message}");
+            return new List<ColumnInfo>();
         }
     }
 
@@ -232,18 +315,18 @@ public class MsSqlConnector : IDatabaseConnector
         {
             if(string.IsNullOrEmpty(tableName))
             {
-                Console.WriteLine("資料表名稱不可為空");
+                _logger.Warn("資料表名稱不可為空");
                 return new List<Dictionary<string, object>>();
             }
             if(!IsConnectionOpen())
             {
-                Console.WriteLine("資料庫連線未開啟");
+                _logger.Warn("資料庫連線未開啟");
                 return new List<Dictionary<string, object>>();
             }
 
             // 白名單驗證
             if(!WhiteListValidation(tableName)){
-                Console.WriteLine($"表 {tableName} 不存在");
+                _logger.Warn($"表 {tableName} 不存在");
                 return new List<Dictionary<string, object>>();                
             }
             
@@ -278,7 +361,7 @@ public class MsSqlConnector : IDatabaseConnector
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"讀取表資料失敗：{ex.Message}");
+            _logger.Error($"讀取表資料失敗：{ex.Message}");
             return new List<Dictionary<string, object>>();
         }
     }
@@ -294,16 +377,16 @@ public class MsSqlConnector : IDatabaseConnector
         {
             if(string.IsNullOrEmpty(tableName) || data == null || data.Count == 0)
             {
-                Console.WriteLine("表名稱或寫入之資料不可為空");
+                _logger.Warn("表名稱或寫入之資料不可為空");
                 return false;
             }
             if(!IsConnectionOpen())
             {
-                Console.WriteLine("資料庫連線未開啟");
+                _logger.Warn("資料庫連線未開啟");
                 return false;
             }
             if(!WhiteListValidation(tableName)){
-                Console.WriteLine($"表 {tableName} 不存在");
+                _logger.Warn($"表 {tableName} 不存在");
                 return false;                
             }
 
@@ -345,12 +428,12 @@ public class MsSqlConnector : IDatabaseConnector
                     successCount++;
                 }
             }
-            Console.WriteLine($"成功插入 {successCount} 筆資料");
+            _logger.Info($"成功插入 {successCount} 筆資料");
             return true;
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"資料寫入失敗：{ex.Message}");
+            _logger.Error($"資料寫入失敗：{ex.Message}");
             return false;
         }
     }
@@ -378,12 +461,12 @@ public class MsSqlConnector : IDatabaseConnector
         {
             if(!IsConnectionOpen())
             {
-                Console.WriteLine("連線未開啟");
+                _logger.Warn("連線未開啟");
                 return false;
             } 
             if(string.IsNullOrEmpty(databaseName))
             {
-                Console.WriteLine("資料庫名稱不可為空");
+                _logger.Warn("資料庫名稱不可為空");
                 return false;
             }
             string sql = @"SELECT COUNT(*)
@@ -400,22 +483,29 @@ public class MsSqlConnector : IDatabaseConnector
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"資料庫存在查詢失敗：{ex.Message}");
+            _logger.Error($"資料庫存在查詢失敗：{ex.Message}");
             return false;
         }
 
     }
     public bool CreateDatabase(string databaseName) 
     {
-        Console.WriteLine("不支援 MSSQL 建立資料庫");
-        Console.WriteLine("此連接器用於讀取現有 MSSQL 資料庫");
+        _logger.Warn("不支援 MSSQL 建立資料庫");
+        _logger.Warn("此連接器用於讀取現有 MSSQL 資料庫");
+        return false;
+    }
+
+    public bool CreateTable(string tableName, List<ColumnDefinition> columns)
+    {
+        _logger.Warn("不支援在 MSSQL 建立資料表");
+        _logger.Warn("此連接器用於讀取現有 MSSQL 資料庫");
         return false;
     }
 
     public bool DeleteDatabase(string databaseName)
     {
-        Console.WriteLine("不支援 MSSQL 刪除資料庫");
-        Console.WriteLine("此連接器用於讀取現有 MSSQL 資料庫");
+        _logger.Warn("不支援 MSSQL 刪除資料庫");
+        _logger.Warn("此連接器用於讀取現有 MSSQL 資料庫");
         return false;
     }
 
@@ -425,39 +515,39 @@ public class MsSqlConnector : IDatabaseConnector
         {
             if(!IsConnectionOpen())
             {
-                Console.WriteLine("資料庫連線未開啟");
+                _logger.Warn("資料庫連線未開啟");
                 return false;
             }
             if(string.IsNullOrEmpty(databaseName))
             {
-                Console.WriteLine("資料庫名稱不可為空");
+                _logger.Warn("資料庫名稱不可為空");
                 return false;
             }
             if(!DatabaseExists(databaseName))
             {
-                Console.WriteLine($"資料庫 '{databaseName}' 不存在");
+                _logger.Warn($"資料庫 '{databaseName}' 不存在");
             }
 
             // 查詢目前連接之資料庫
             if(_connection != null && !databaseName.Equals(_connection.Database))
             {
-                Console.WriteLine($"目前連線資料庫為 '{_connection.Database}'，開始切換...");
+                _logger.Info($"目前連線資料庫為 '{_connection.Database}'，開始切換...");
             }
             else
             {
-                Console.WriteLine($"'{databaseName}' 便為目前連接之資料庫");
+                _logger.Info($"'{databaseName}' 便為目前連接之資料庫");
                 return true;
             }
 
             // 切換資料庫
             _connection.ChangeDatabase(databaseName);
-            Console.WriteLine($"切換成功，目前資料庫為 '{_connection.Database}'");
+            _logger.Info($"切換成功，目前資料庫為 '{_connection.Database}'");
       
             return true;
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"資料庫切換錯誤：{ex.Message}");
+            _logger.Error($"資料庫切換錯誤：{ex.Message}");
             return false;
         }
     }

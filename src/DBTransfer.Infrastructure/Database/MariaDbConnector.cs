@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using DBTransfer.Core.Interfaces;
 using DBTransfer.Core.Models;
 using MySqlConnector;
+using DBTransfer.Core.Logging;
 using DBTransfer.Core.Utils;
 using Microsoft.Data.SqlClient;
 
@@ -16,14 +17,17 @@ public class MariaDbConnector : IDatabaseConnector
 {
     private MySqlConnection? _connection;
     private string _connectionString;
+    private readonly ITransferLogger _logger;
 
     /// <summary>
     /// 初始化連接字串
     /// </summary>
     /// <param name="connectionString">連線資訊（server ip, port, database, user...），從 .env 檔讀取</param>
-    public MariaDbConnector(string connectionString)
+    /// <param name="logger">日誌記錄器</param>
+    public MariaDbConnector(string connectionString, ITransferLogger logger)
     {
         _connectionString = connectionString;
+        _logger = logger;
     }
 
     // ========== 第一組：連線管理方法 ==========
@@ -41,7 +45,7 @@ public class MariaDbConnector : IDatabaseConnector
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"連線錯誤：{ex.Message}");
+            _logger.Error($"連線錯誤：{ex.Message}");
             return false;
         }
     }
@@ -56,13 +60,13 @@ public class MariaDbConnector : IDatabaseConnector
             if(IsConnectionOpen() && _connection != null)
             {
                 _connection.Close();
-                Console.WriteLine("資料庫連線已關閉");
+                _logger.Info("資料庫連線已關閉");
             }
             return true;
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"斷開連線錯誤：{ex.Message}");
+            _logger.Error($"斷開連線錯誤：{ex.Message}");
             return false;
         }
     }
@@ -119,7 +123,7 @@ public class MariaDbConnector : IDatabaseConnector
         {
             if(!IsConnectionOpen())
             {
-                Console.WriteLine("資料庫連線未開啟");
+                _logger.Warn("資料庫連線未開啟");
                 return new List<string>();
             }
 
@@ -147,7 +151,7 @@ public class MariaDbConnector : IDatabaseConnector
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"查詢資料表名稱失敗：{ex.Message}");
+            _logger.Error($"查詢資料表名稱失敗：{ex.Message}");
             return new List<string>();
         }
     }
@@ -163,20 +167,20 @@ public class MariaDbConnector : IDatabaseConnector
         {
             if(string.IsNullOrEmpty(tableName))
             {
-                Console.WriteLine("資料表名稱不可為空");
+                _logger.Warn("資料表名稱不可為空");
                 return null;
             }
 
             if(!IsConnectionOpen() || _connection == null)
             {
-                Console.WriteLine("連線尚未建立");
+                _logger.Warn("連線尚未建立");
                 return null;
             }
 
             // 白名單驗證
             if(!WhiteListValidation(tableName))
             {
-                Console.WriteLine($"表 {tableName} 不存在");
+                _logger.Warn($"表 {tableName} 不存在");
                 return null;
             }
 
@@ -234,8 +238,87 @@ public class MariaDbConnector : IDatabaseConnector
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"讀取表資料失敗：{ex.Message}");
+            _logger.Error($"讀取表資料失敗：{ex.Message}");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// 獲取指定表的欄位詳細資訊（含資料類型）
+    /// </summary>
+    public List<ColumnInfo> GetColumnDetails(string tableName)
+    {
+        try
+        {
+            if(string.IsNullOrEmpty(tableName))
+            {
+                _logger.Warn("資料表名稱不可為空");
+                return new List<ColumnInfo>();
+            }
+            if(!IsConnectionOpen() || _connection == null)
+            {
+                _logger.Warn("連線尚未建立");
+                return new List<ColumnInfo>();
+            }
+            if(!WhiteListValidation(tableName))
+            {
+                _logger.Warn($"表 {tableName} 不存在");
+                return new List<ColumnInfo>();
+            }
+
+            string sql = @"
+                SELECT 
+                    COLUMN_NAME,
+                    DATA_TYPE,
+                    CHARACTER_MAXIMUM_LENGTH,
+                    NUMERIC_PRECISION,
+                    NUMERIC_SCALE,
+                    IS_NULLABLE,
+                    ORDINAL_POSITION,
+                    EXTRA
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = @tableName
+                ORDER BY ORDINAL_POSITION";
+
+            var columns = new List<ColumnInfo>();
+            using(var command = new MySqlCommand(sql, _connection))
+            {
+                command.Parameters.AddWithValue("@tableName", tableName);
+
+                using(var reader = command.ExecuteReader())
+                {
+                    while(reader.Read())
+                    {
+                        // CHARACTER_MAXIMUM_LENGTH 在 MariaDB 中為 bigint，需安全轉換
+                        long? rawMaxLen = reader.IsDBNull(2) ? null : Convert.ToInt64(reader.GetValue(2));
+                        int? maxLength = rawMaxLen switch
+                        {
+                            null => null,
+                            > int.MaxValue => -1,
+                            _ => (int)rawMaxLen.Value
+                        };
+
+                        var col = new ColumnInfo(
+                            columnName: reader.GetString(0),
+                            dataType: reader.GetString(1),
+                            maxLength: maxLength,
+                            precision: reader.IsDBNull(3) ? null : Convert.ToInt32(reader.GetValue(3)),
+                            scale: reader.IsDBNull(4) ? null : Convert.ToInt32(reader.GetValue(4)),
+                            isNullable: reader.GetString(5) == "YES",
+                            isIdentity: !reader.IsDBNull(7) && reader.GetString(7).Contains("auto_increment"),
+                            ordinalPosition: Convert.ToInt32(reader.GetValue(6))
+                        );
+                        columns.Add(col);
+                    }
+                }
+            }
+
+            return columns;
+        }
+        catch(Exception ex)
+        {
+            _logger.Error($"讀取欄位詳細資訊失敗：{ex.Message}");
+            return new List<ColumnInfo>();
         }
     }
 
@@ -251,20 +334,20 @@ public class MariaDbConnector : IDatabaseConnector
         {
             if(string.IsNullOrEmpty(tableName))
             {
-                Console.WriteLine("資料表名稱不可為空");
+                _logger.Warn("資料表名稱不可為空");
                 return new List<Dictionary<string, object>>();
             }
 
             if(!IsConnectionOpen())
             {
-                Console.WriteLine("資料庫連線未開啟");
+                _logger.Warn("資料庫連線未開啟");
                 return new List<Dictionary<string, object>>();
             }
 
             // 白名單驗證
             if(!WhiteListValidation(tableName))
             {
-                Console.WriteLine($"表 {tableName} 不存在");
+                _logger.Warn($"表 {tableName} 不存在");
                 return new List<Dictionary<string, object>>();
             }
 
@@ -304,7 +387,7 @@ public class MariaDbConnector : IDatabaseConnector
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"讀取表資料失敗：{ex.Message}");
+            _logger.Error($"讀取表資料失敗：{ex.Message}");
             return new List<Dictionary<string, object>>();
         }
     }
@@ -320,68 +403,77 @@ public class MariaDbConnector : IDatabaseConnector
         {
             if(string.IsNullOrEmpty(tableName) || data == null || data.Count == 0)
             {
-                Console.WriteLine("表名稱或寫入之資料不可為空");
+                _logger.Warn("表名稱或寫入之資料不可為空");
                 return false;
             }
 
-            if(!IsConnectionOpen())
+            if(!IsConnectionOpen() || _connection == null)
             {
-                Console.WriteLine("資料庫連線未開啟");
+                _logger.Warn("資料庫連線未開啟");
                 return false;
             }
 
             if(!WhiteListValidation(tableName))
             {
-                Console.WriteLine($"表 {tableName} 不存在");
+                _logger.Warn($"表 {tableName} 不存在");
                 return false;
             }
 
-            int successCount = 0;
+            const int batchSize = 500;
+            int totalInserted = 0;
 
-            foreach(var row in data)
+            // 以第一筆資料的欄位為基準
+            List<string> columns = data[0].Keys.ToList();
+            string columnsPart = string.Join(", ", columns.Select(c => $"`{c}`"));
+
+            using var transaction = _connection.BeginTransaction();
+            try
             {
-                if(row.Count == 0) continue;
-
-                // 取得欄位名稱
-                List<string> columns = row.Keys.ToList();
-
-                // 生成欄位部分（使用反引號）
-                string columnsPart = string.Join(", ", columns.Select(c => $"`{c}`"));
-
-                // 生成參數部分
-                List<string> parameters = columns.Select(col => "@" + col).ToList();
-                string parametersPart = string.Join(", ", parameters);
-
-                // MySQL 使用反引號包裹表名和欄位名
-                string sql = $"INSERT INTO `{tableName}` ({columnsPart}) VALUES ({parametersPart})";
-
-                using(var command = new MySqlCommand(sql, _connection))
+                for(int i = 0; i < data.Count; i += batchSize)
                 {
-                    foreach(var column in columns)
-                    {
-                        object value = row[column];
-                        
-                        if(value == DBNull.Value)
-                        {
-                            command.Parameters.AddWithValue("@" + column, DBNull.Value);
-                        }
-                        else
-                        {
-                            command.Parameters.AddWithValue("@" + column, value);
-                        }
-                    }
-                    
-                    command.ExecuteNonQuery();
-                    successCount++;
-                }
-            }
+                    var batch = data.Skip(i).Take(batchSize).ToList();
 
-            Console.WriteLine($"成功插入 {successCount} 筆資料");
-            return true;
+                    using var command = new MySqlCommand();
+                    command.Connection = _connection;
+                    command.Transaction = transaction;
+
+                    var valueGroups = new List<string>();
+                    int paramCounter = 0;
+
+                    for(int j = 0; j < batch.Count; j++)
+                    {
+                        var row = batch[j];
+                        var paramNames = new List<string>();
+
+                        foreach(var col in columns)
+                        {
+                            string paramName = $"@p{paramCounter++}";
+                            paramNames.Add(paramName);
+                            object value = row.ContainsKey(col) ? row[col] : DBNull.Value;
+                            command.Parameters.AddWithValue(paramName, ConvertValue(value));
+                        }
+
+                        valueGroups.Add($"({string.Join(", ", paramNames)})");
+                    }
+
+                    command.CommandText = $"INSERT INTO `{tableName}` ({columnsPart}) VALUES {string.Join(", ", valueGroups)}";
+                    command.ExecuteNonQuery();
+                    totalInserted += batch.Count;
+                }
+
+                transaction.Commit();
+                _logger.Info($"  成功插入 {totalInserted} 筆資料（批次寫入，每批 {batchSize}）");
+                return true;
+            }
+            catch
+            {
+                transaction.Rollback();
+                throw; // 拋給外層 catch 處理
+            }
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"資料寫入失敗：{ex.Message}");
+            _logger.Error($"資料寫入失敗（已回滾）：{ex.Message}");
             return false;
         }
     }
@@ -405,6 +497,16 @@ public class MariaDbConnector : IDatabaseConnector
         return validNames.Contains(tableName);
     }
 
+    /// <summary>
+    /// 將資料值轉換為 MariaDB 相容格式
+    /// </summary>
+    private static object ConvertValue(object value)
+    {
+        if(value == null || value == DBNull.Value) return DBNull.Value;
+        if(value is Guid guid) return guid.ToString();  // uniqueidentifier → VARCHAR(36)
+        return value;
+    }
+
     // ========== 第三組：資料庫管理方法 ==========
     // TODO: 實作以下三個方法
     public bool DatabaseExists(string databaseName)
@@ -413,12 +515,12 @@ public class MariaDbConnector : IDatabaseConnector
         {
             if(!IsConnectionOpen())
             {
-                Console.WriteLine("資料庫連線未開啟");
+                _logger.Warn("資料庫連線未開啟");
                 return false;
             }
             if(string.IsNullOrEmpty(databaseName))
             {
-                Console.WriteLine("資料庫名稱不可為空");
+                _logger.Warn("資料庫名稱不可為空");
                 return false;
             }
             string sql = @"SELECT COUNT(*)
@@ -442,33 +544,81 @@ public class MariaDbConnector : IDatabaseConnector
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"資料庫存在查詢失敗：{ex.Message}");
+            _logger.Error($"資料庫存在查詢失敗：{ex.Message}");
             return false;
         }
     }
+    public bool CreateTable(string tableName, List<ColumnDefinition> columns)
+    {
+        try
+        {
+            if(string.IsNullOrEmpty(tableName) || columns == null || columns.Count == 0)
+            {
+                _logger.Warn("表名稱或欄位定義不可為空");
+                return false;
+            }
+            if(!IsConnectionOpen())
+            {
+                _logger.Warn("資料庫連線未開啟");
+                return false;
+            }
+            if(!TableNameConverter.IsValidMariaDBTableName(tableName))
+            {
+                _logger.Warn($"表名 '{tableName}' 不合法");
+                return false;
+            }
+
+            // 組合 CREATE TABLE DDL
+            var columnDefs = new List<string>();
+            foreach(var col in columns)
+            {
+                string nullable = col.IsNullable ? "NULL" : "NOT NULL";
+                string autoIncrement = col.IsAutoIncrement ? " AUTO_INCREMENT" : "";
+                columnDefs.Add($"  `{col.ColumnName}` {col.TypeDefinition} {nullable}{autoIncrement}");
+            }
+
+            string ddl = $"CREATE TABLE IF NOT EXISTS `{tableName}` (\n"
+                + string.Join(",\n", columnDefs)
+                + "\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+            using(var command = new MySqlCommand(ddl, _connection))
+            {
+                command.ExecuteNonQuery();
+            }
+
+            _logger.Info($"  ✅ 資料表 '{tableName}' 建立成功");
+            return true;
+        }
+        catch(Exception ex)
+        {
+            _logger.Error($"建立資料表失敗：{ex.Message}");
+            return false;
+        }
+    }
+
     public bool CreateDatabase(string databaseName) 
     {
         try
         {
             if(!IsConnectionOpen())
             {
-                Console.WriteLine("資料庫連線未開啟");
+                _logger.Warn("資料庫連線未開啟");
                 return false;
             }
             if(string.IsNullOrEmpty(databaseName))
             {
-                Console.WriteLine("資料庫名稱不可為空");
+                _logger.Warn("資料庫名稱不可為空");
                 return false;
             }
             if(DatabaseExists(databaseName))
             {
-                Console.WriteLine($"資料庫 '{databaseName}' 已存在");
+                _logger.Info($"資料庫 '{databaseName}' 已存在");
                 return true;
             }
             
             if(!TableNameConverter.IsValidMariaDBTableName(databaseName))
             {
-                Console.WriteLine($"資料庫 '{databaseName}' 名稱不合法，只允許英文字母、數字、底線");
+                _logger.Warn($"資料庫 '{databaseName}' 名稱不合法，只允許英文字母、數字、底線");
                 return false;
             }
             
@@ -480,12 +630,12 @@ public class MariaDbConnector : IDatabaseConnector
                 command.ExecuteNonQuery();
                 if(DatabaseExists(databaseName))
                 {
-                    Console.WriteLine($"資料庫 '{databaseName}' 建立成功");
+                    _logger.Info($"資料庫 '{databaseName}' 建立成功");
                     return true;
                 }
                 else
                 {
-                    Console.WriteLine($"資料庫 '{databaseName}' 建立失敗");
+                    _logger.Error($"資料庫 '{databaseName}' 建立失敗");
                     return false;
                 }
             }
@@ -493,7 +643,7 @@ public class MariaDbConnector : IDatabaseConnector
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"資料庫建立失敗：{ex.Message}");
+            _logger.Error($"資料庫建立失敗：{ex.Message}");
             return false;
         }
     }
@@ -504,22 +654,22 @@ public class MariaDbConnector : IDatabaseConnector
         {
             if(!IsConnectionOpen() || _connection == null)
             {
-                Console.WriteLine("資料庫連線未開啟");
+                _logger.Warn("資料庫連線未開啟");
                 return false;
             }
             if(string.IsNullOrEmpty(databaseName))
             {
-                Console.WriteLine("資料庫名稱不可為空");
+                _logger.Warn("資料庫名稱不可為空");
                 return false;
             }
             if(!DatabaseExists(databaseName))
             {
-                Console.WriteLine($"資料庫 '{databaseName}' 不存在");
+                _logger.Warn($"資料庫 '{databaseName}' 不存在");
                 return false;
             }
             if(!TableNameConverter.IsValidMariaDBTableName(databaseName))
             {
-                Console.WriteLine($"資料庫 '{databaseName}' 名稱不合法，只允許英文字母、數字、底線");
+                _logger.Warn($"資料庫 '{databaseName}' 名稱不合法，只允許英文字母、數字、底線");
                 return false;
             }
 
@@ -529,19 +679,19 @@ public class MariaDbConnector : IDatabaseConnector
                 command.ExecuteNonQuery();
                 if(!DatabaseExists(databaseName))
                 {
-                    Console.WriteLine($"資料庫 '{databaseName}' 刪除成功");
+                    _logger.Info($"資料庫 '{databaseName}' 刪除成功");
                     return true;
                 }
                 else
                 {
-                    Console.WriteLine($"資料庫 '{databaseName}' 刪除失敗");
+                    _logger.Error($"資料庫 '{databaseName}' 刪除失敗");
                     return false;
                 }
             }
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"刪除資料庫失敗：{ex.Message}");
+            _logger.Error($"刪除資料庫失敗：{ex.Message}");
             return false;
         }
     }
@@ -552,39 +702,39 @@ public class MariaDbConnector : IDatabaseConnector
         {
             if(!IsConnectionOpen() || _connection == null)
             {
-                Console.WriteLine("資料庫連線未開啟");
+                _logger.Warn("資料庫連線未開啟");
                 return false;
             }
             if(string.IsNullOrEmpty(databaseName))
             {
-                Console.WriteLine("資料庫名稱不可為空");
+                _logger.Warn("資料庫名稱不可為空");
                 return false;
             }
             if(!DatabaseExists(databaseName))
             {
-                Console.WriteLine($"資料庫 '{databaseName}' 不存在");
+                _logger.Warn($"資料庫 '{databaseName}' 不存在");
                 return false;
             }
 
             // 查詢目前連接之資料庫
             if(_connection != null && !_connection.Database.Equals(databaseName))
             {
-                Console.WriteLine($"目前連線資料庫為 '{_connection.Database}'，開始切換...");
+                _logger.Info($"目前連線資料庫為 '{_connection.Database}'，開始切換...");
             }
             else
             {
-                Console.WriteLine($"'{databaseName}' 便為目前連接之資料庫");
+                _logger.Info($"'{databaseName}' 便為目前連接之資料庫");
                 return true;
             }
 
             // 切換資料庫
             _connection.ChangeDatabase(databaseName);
-            Console.WriteLine($"切換成功，目前資料庫為 '{_connection.Database}'");
+            _logger.Info($"切換成功，目前資料庫為 '{_connection.Database}'");
             return true;
         }
         catch(Exception ex)
         {
-            Console.WriteLine($"資料庫切換失敗：{ex.Message}");
+            _logger.Error($"資料庫切換失敗：{ex.Message}");
             return false;
         }
     }

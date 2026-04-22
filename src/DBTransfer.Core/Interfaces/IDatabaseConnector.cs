@@ -42,6 +42,13 @@ public interface IDatabaseConnector
     TableInfo? GetTableStructure(string tableName);
 
     /// <summary>
+    /// 獲取指定表的欄位詳細資訊（含資料類型、長度、精度等）
+    /// </summary>
+    /// <param name="tableName">表名稱</param>
+    /// <returns>欄位詳細資訊清單</returns>
+    List<ColumnInfo> GetColumnDetails(string tableName);
+
+    /// <summary>
     /// 讀取數據
     /// </summary>
     List<Dictionary<string, object>> GetTableData(string tableName);
@@ -66,6 +73,14 @@ public interface IDatabaseConnector
     /// <param name="databaseName">資料庫名稱</param>
     /// <returns>創建成功返回 true，失敗返回 false</returns>
     bool CreateDatabase(string databaseName);
+
+    /// <summary>
+    /// 在資料庫中建立資料表
+    /// </summary>
+    /// <param name="tableName">表名稱</param>
+    /// <param name="columns">欄位定義清單</param>
+    /// <returns>建立成功返回 true，失敗返回 false</returns>
+    bool CreateTable(string tableName, List<ColumnDefinition> columns);
 
     /// <summary>
     /// 切換到指定資料庫
