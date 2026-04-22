@@ -6,7 +6,6 @@ using DBTransfer.Core.Models;
 using MySqlConnector;
 using DBTransfer.Core.Logging;
 using DBTransfer.Core.Utils;
-using Microsoft.Data.SqlClient;
 
 namespace DBTransfer.Infrastructure.Database;
 
@@ -508,7 +507,6 @@ public class MariaDbConnector : IDatabaseConnector
     }
 
     // ========== 第三組：資料庫管理方法 ==========
-    // TODO: 實作以下三個方法
     public bool DatabaseExists(string databaseName)
     {
         try
