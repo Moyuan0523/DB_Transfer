@@ -66,10 +66,6 @@ DB_Transfer/
 ├── .gitignore                     # Git 忽略規則
 ├── README.md                      # 專案說明
 ├── DBTransfer.slnx                # .NET Solution 檔案
-├── docs/                          # 文檔
-│   ├── ENV_SETUP.md              # 環境變數設定指南
-│   ├── roadmap.md                # 學習路線圖
-│   └── 資料庫期末報告-D 組.pdf   # 原始課程報告
 ├── logs/                          # 轉移日誌（自動產生，已忽略）
 ├── scripts/                       # 腳本
 │   ├── setup_database.py         # 資料庫建立腳本（舊版）
@@ -117,7 +113,7 @@ cp .env.example .env
 nano .env  # 或使用其他編輯器
 ```
 
-**詳細說明**: 參考 [docs/ENV_SETUP.md](docs/ENV_SETUP.md)
+環境變數說明請參考 [.env.example](.env.example)
 
 #### 2. 安裝依賴套件
 
@@ -186,8 +182,6 @@ python tests/test_mariadb_connection.py
 ⚠️ **安全提醒**: `.env` 文件包含敏感資訊，已在 `.gitignore` 中設置，不會提交到 Git
 
 ## 📚 學習路線
-
-詳見 [docs/roadmap.md](docs/roadmap.md)
 
 ### 當前進度
 
